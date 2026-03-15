@@ -1,8 +1,11 @@
+import fs from 'fs';
 import https from 'https';
+import path from 'path';
 import { Api, Bot } from 'grammy';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
+import { resolveGroupFolderPath } from '../group-folder.js';
 import { logger } from '../logger.js';
 import { registerChannel, ChannelOpts } from './registry.js';
 import {
@@ -39,6 +42,43 @@ async function sendTelegramMessage(
     logger.debug({ err }, 'Markdown send failed, falling back to plain text');
     await api.sendMessage(chatId, text, options);
   }
+}
+
+/**
+ * Download a file from Telegram's API to a local path.
+ */
+async function downloadTelegramFile(
+  botToken: string,
+  filePath: string,
+  destPath: string,
+): Promise<void> {
+  const url = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(destPath);
+    https
+      .get(url, (res) => {
+        if (res.statusCode !== 200) {
+          file.close();
+          fs.unlinkSync(destPath);
+          reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+          return;
+        }
+        res.pipe(file);
+        file.on('finish', () => {
+          file.close();
+          resolve();
+        });
+      })
+      .on('error', (err) => {
+        file.close();
+        try {
+          fs.unlinkSync(destPath);
+        } catch {
+          /* ignore */
+        }
+        reject(err);
+      });
+  });
 }
 
 export class TelegramChannel implements Channel {
@@ -199,7 +239,76 @@ export class TelegramChannel implements Channel {
       });
     };
 
-    this.bot.on('message:photo', (ctx) => storeNonText(ctx, '[Photo]'));
+    this.bot.on('message:photo', async (ctx) => {
+      const chatJid = `tg:${ctx.chat.id}`;
+      const group = this.opts.registeredGroups()[chatJid];
+      if (!group) {
+        storeNonText(ctx, '[Photo]');
+        return;
+      }
+
+      const timestamp = new Date(ctx.message.date * 1000).toISOString();
+      const senderName =
+        ctx.from?.first_name ||
+        ctx.from?.username ||
+        ctx.from?.id?.toString() ||
+        'Unknown';
+      const caption = ctx.message.caption ? ` ${ctx.message.caption}` : '';
+      const isGroup =
+        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+      this.opts.onChatMetadata(
+        chatJid,
+        timestamp,
+        undefined,
+        'telegram',
+        isGroup,
+      );
+
+      try {
+        // Get the largest available photo size
+        const photos = ctx.message.photo;
+        const largest = photos[photos.length - 1];
+
+        // Download via Telegram Bot API
+        const file = await ctx.api.getFile(largest.file_id);
+        if (!file.file_path) throw new Error('No file_path in response');
+
+        // Save to group media directory
+        const groupDir = resolveGroupFolderPath(group.folder);
+        const mediaDir = path.join(groupDir, 'media');
+        fs.mkdirSync(mediaDir, { recursive: true });
+
+        const ext = path.extname(file.file_path) || '.jpg';
+        const filename = `photo-${ctx.message.message_id}${ext}`;
+        const localPath = path.join(mediaDir, filename);
+
+        await downloadTelegramFile(this.botToken, file.file_path, localPath);
+
+        const containerPath = `/workspace/group/media/${filename}`;
+        const content = `[Photo: ${containerPath}]${caption}`;
+
+        logger.info(
+          { chatJid, filename, size: largest.file_size },
+          'Telegram photo downloaded',
+        );
+
+        this.opts.onMessage(chatJid, {
+          id: ctx.message.message_id.toString(),
+          chat_jid: chatJid,
+          sender: ctx.from?.id?.toString() || '',
+          sender_name: senderName,
+          content,
+          timestamp,
+          is_from_me: false,
+        });
+      } catch (err) {
+        logger.warn(
+          { chatJid, err },
+          'Failed to download photo, using placeholder',
+        );
+        storeNonText(ctx, '[Photo]');
+      }
+    });
     this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
     this.bot.on('message:voice', (ctx) => storeNonText(ctx, '[Voice message]'));
     this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));

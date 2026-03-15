@@ -56,3 +56,7 @@ NEVER use markdown. Only use WhatsApp/Telegram formatting:
 - ```triple backticks``` for code
 
 No ## headings. No [links](url). No **double stars**.
+
+## Photos and Images
+
+When a message contains `[Photo: /path/to/file.jpg]`, the image has been downloaded and saved locally. Use the Read tool to view it — Claude Code handles images natively. Describe what you see and respond to any caption.
