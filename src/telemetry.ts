@@ -15,7 +15,7 @@ function randomHex(bytes: number): string {
   return Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-interface UsageSpan {
+export interface UsageSpan {
   model: string;
   inputTokens: number;
   outputTokens: number;
@@ -27,75 +27,61 @@ interface UsageSpan {
 
 export function emitUsageSpan(usage: UsageSpan): void {
   const now = Date.now();
-  const startNano = ((now - usage.durationMs) * 1_000_000).toString();
-  const endNano = (now * 1_000_000).toString();
+  const startNano = String((now - usage.durationMs) * 1_000_000);
+  const endNano = String(now * 1_000_000);
   const traceId = randomHex(16);
   const spanId = randomHex(8);
 
+  // Use proto JSON format (snake_case field names)
   const attributes: Array<{
     key: string;
-    value: { stringValue?: string; intValue?: string };
+    value: { string_value?: string; int_value?: string };
   }> = [
-    {
-      key: 'gen_ai.system',
-      value: { stringValue: 'anthropic' },
-    },
-    {
-      key: 'gen_ai.request.model',
-      value: { stringValue: usage.model },
-    },
+    { key: 'gen_ai.system', value: { string_value: 'anthropic' } },
+    { key: 'gen_ai.request.model', value: { string_value: usage.model } },
     {
       key: 'gen_ai.usage.input_tokens',
-      value: { intValue: String(usage.inputTokens) },
+      value: { int_value: String(usage.inputTokens) },
     },
     {
       key: 'gen_ai.usage.output_tokens',
-      value: { intValue: String(usage.outputTokens) },
+      value: { int_value: String(usage.outputTokens) },
     },
-    {
-      key: 'agent.name',
-      value: { stringValue: 'lemon-chan' },
-    },
+    { key: 'agent.name', value: { string_value: 'lemon-chan' } },
   ];
 
   if (usage.groupName) {
     attributes.push({
       key: 'nanoclaw.group',
-      value: { stringValue: usage.groupName },
+      value: { string_value: usage.groupName },
     });
   }
   if (usage.sessionId) {
     attributes.push({
       key: 'agent.session_id',
-      value: { stringValue: usage.sessionId },
+      value: { string_value: usage.sessionId },
     });
   }
 
   const otlpPayload = {
-    resourceSpans: [
+    resource_spans: [
       {
         resource: {
           attributes: [
-            {
-              key: 'service.name',
-              value: { stringValue: 'nanoclaw' },
-            },
-            {
-              key: 'agent.name',
-              value: { stringValue: 'lemon-chan' },
-            },
+            { key: 'service.name', value: { string_value: 'nanoclaw' } },
+            { key: 'agent.name', value: { string_value: 'lemon-chan' } },
           ],
         },
-        scopeSpans: [
+        scope_spans: [
           {
             spans: [
               {
-                traceId,
-                spanId,
+                trace_id: traceId,
+                span_id: spanId,
                 name: 'gen_ai.chat_completion',
                 kind: 3, // SPAN_KIND_CLIENT
-                startTimeUnixNano: startNano,
-                endTimeUnixNano: endNano,
+                start_time_unix_nano: startNano,
+                end_time_unix_nano: endNano,
                 attributes,
                 status: {
                   code: usage.statusCode && usage.statusCode >= 400 ? 2 : 1, // ERROR : OK
@@ -124,10 +110,18 @@ export function emitUsageSpan(usage: UsageSpan): void {
       timeout: 5000,
     },
     (res) => {
-      // Drain response
       res.resume();
-      if (res.statusCode !== 200) {
-        logger.debug({ statusCode: res.statusCode }, 'Lookout span rejected');
+      if (res.statusCode === 200) {
+        logger.info(
+          {
+            model: usage.model,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          },
+          'Usage span sent to Lookout',
+        );
+      } else {
+        logger.warn({ statusCode: res.statusCode }, 'Lookout span rejected');
       }
     },
   );

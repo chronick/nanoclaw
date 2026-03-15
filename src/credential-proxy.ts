@@ -11,6 +11,7 @@
  *             subsequent requests carry the temp key which is valid as-is.
  */
 import { createServer, Server } from 'http';
+import { createGunzip } from 'zlib';
 import { request as httpsRequest } from 'https';
 import { request as httpRequest, RequestOptions } from 'http';
 
@@ -94,22 +95,53 @@ export function startCredentialProxy(
             // Tap /v1/messages responses to extract token usage
             if (req.url?.startsWith('/v1/messages')) {
               const startTime = Date.now();
-              const chunks: Buffer[] = [];
+              const rawChunks: Buffer[] = [];
+              const isGzipped = (
+                upRes.headers['content-encoding'] || ''
+              ).includes('gzip');
+
               upRes.on('data', (chunk: Buffer) => {
-                chunks.push(chunk);
+                rawChunks.push(chunk);
                 res.write(chunk);
               });
               upRes.on('end', () => {
                 res.end();
-                try {
-                  const raw = Buffer.concat(chunks).toString('utf-8');
-                  extractAndEmitUsage(
-                    raw,
-                    upRes.statusCode || 0,
-                    Date.now() - startTime,
+                const rawBuf = Buffer.concat(rawChunks);
+                if (isGzipped) {
+                  // Decompress before parsing
+                  const gunzip = createGunzip();
+                  const decompressed: Buffer[] = [];
+                  gunzip.on('data', (chunk: Buffer) =>
+                    decompressed.push(chunk),
                   );
-                } catch {
-                  // telemetry is best-effort
+                  gunzip.on('end', () => {
+                    try {
+                      const text =
+                        Buffer.concat(decompressed).toString('utf-8');
+                      extractAndEmitUsage(
+                        text,
+                        upRes.statusCode || 0,
+                        Date.now() - startTime,
+                      );
+                    } catch {
+                      // telemetry is best-effort
+                    }
+                  });
+                  gunzip.on('error', () => {
+                    /* ignore decompression errors */
+                  });
+                  gunzip.end(rawBuf);
+                } else {
+                  try {
+                    const text = rawBuf.toString('utf-8');
+                    extractAndEmitUsage(
+                      text,
+                      upRes.statusCode || 0,
+                      Date.now() - startTime,
+                    );
+                  } catch {
+                    // telemetry is best-effort
+                  }
                 }
               });
             } else {
