@@ -424,6 +424,7 @@ async function runQuery(
           },
         },
         lookout: {
+          type: 'http' as const,
           url: 'http://host.docker.internal:4321/mcp',
         },
       },
