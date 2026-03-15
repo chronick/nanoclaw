@@ -15,6 +15,7 @@ import { request as httpsRequest } from 'https';
 import { request as httpRequest, RequestOptions } from 'http';
 
 import { readEnvFile } from './env.js';
+import { emitUsageSpan } from './telemetry.js';
 import { logger } from './logger.js';
 
 export type AuthMode = 'api-key' | 'oauth';
@@ -89,7 +90,31 @@ export function startCredentialProxy(
           } as RequestOptions,
           (upRes) => {
             res.writeHead(upRes.statusCode!, upRes.headers);
-            upRes.pipe(res);
+
+            // Tap /v1/messages responses to extract token usage
+            if (req.url?.startsWith('/v1/messages')) {
+              const startTime = Date.now();
+              const chunks: Buffer[] = [];
+              upRes.on('data', (chunk: Buffer) => {
+                chunks.push(chunk);
+                res.write(chunk);
+              });
+              upRes.on('end', () => {
+                res.end();
+                try {
+                  const raw = Buffer.concat(chunks).toString('utf-8');
+                  extractAndEmitUsage(
+                    raw,
+                    upRes.statusCode || 0,
+                    Date.now() - startTime,
+                  );
+                } catch {
+                  // telemetry is best-effort
+                }
+              });
+            } else {
+              upRes.pipe(res);
+            }
           },
         );
 
@@ -115,6 +140,64 @@ export function startCredentialProxy(
     });
 
     server.on('error', reject);
+  });
+}
+
+/**
+ * Extract token usage from Anthropic API response and emit to Lookout.
+ * Handles both non-streaming JSON and streaming SSE responses.
+ */
+function extractAndEmitUsage(
+  raw: string,
+  statusCode: number,
+  durationMs: number,
+): void {
+  let model = '';
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  // Check if this is a streaming response (SSE)
+  if (raw.includes('event: message_start')) {
+    // Streaming: parse SSE events
+    for (const line of raw.split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.type === 'message_start' && data.message) {
+          model = data.message.model || '';
+          if (data.message.usage) {
+            inputTokens = data.message.usage.input_tokens || 0;
+          }
+        }
+        if (data.type === 'message_delta' && data.usage) {
+          outputTokens = data.usage.output_tokens || 0;
+        }
+      } catch {
+        // skip unparseable lines
+      }
+    }
+  } else {
+    // Non-streaming: parse JSON body
+    try {
+      const body = JSON.parse(raw);
+      model = body.model || '';
+      if (body.usage) {
+        inputTokens = body.usage.input_tokens || 0;
+        outputTokens = body.usage.output_tokens || 0;
+      }
+    } catch {
+      return;
+    }
+  }
+
+  if (!model || (inputTokens === 0 && outputTokens === 0)) return;
+
+  emitUsageSpan({
+    model,
+    inputTokens,
+    outputTokens,
+    durationMs,
+    statusCode,
   });
 }
 
