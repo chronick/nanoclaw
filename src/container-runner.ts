@@ -26,6 +26,7 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
+import { readEnvFile } from './env.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
@@ -240,6 +241,12 @@ function buildContainerArgs(
 
   // Runtime-specific args for host gateway resolution
   args.push(...hostGatewayArgs());
+
+  // Inject GitHub token for git operations (scoped fine-grained PAT)
+  const githubSecrets = readEnvFile(['NANOCLAW_GITHUB_PAT']);
+  if (githubSecrets.NANOCLAW_GITHUB_PAT) {
+    args.push('-e', `GITHUB_TOKEN=${githubSecrets.NANOCLAW_GITHUB_PAT}`);
+  }
 
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),

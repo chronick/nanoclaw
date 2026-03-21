@@ -1,8 +1,22 @@
 import pino from 'pino';
+import { resolve } from 'path';
+
+const logFile = process.env.LOG_FILE;
 
 export const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
-  transport: { target: 'pino-pretty', options: { colorize: true } },
+  transport: logFile
+    ? {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          destination: resolve(logFile),
+          mkdir: true,
+          sync: true,
+          append: true,
+        },
+      }
+    : { target: 'pino-pretty', options: { colorize: true } },
 });
 
 // Route uncaught errors through pino so they get timestamps in stderr
