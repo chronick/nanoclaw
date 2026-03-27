@@ -22,9 +22,9 @@ When the user sends a random thought, idea, or observation:
 When the user sends a photo via Telegram:
 1. Use the Read tool to view the image at the path in the message (e.g. `[Photo: /workspace/group/media/photo-123.jpg]`)
 2. **Is it food?** (meal, dish, ingredient, recipe, restaurant plate, grocery item, etc.)
-   - **Yes → meal-prep inbox**: Copy image + create markdown in `/workspace/extra/meal-prep/recipes/inbox/`
+   - **Yes → pantry inbox**: Copy image + create markdown in `/workspace/extra/pantry/inbox/`
      ```
-     cp /workspace/group/media/photo-{id}.jpg /workspace/extra/meal-prep/recipes/inbox/
+     cp /workspace/group/media/photo-{id}.jpg /workspace/extra/pantry/inbox/
      ```
      Write `YYYY-MM-DD-{slug}.md`:
      ```markdown
@@ -39,15 +39,15 @@ When the user sends a photo via Telegram:
 
      {caption if any}
      ```
-     Commit + push: `cd /workspace/extra/meal-prep && git add recipes/inbox/ && git commit -m "inbox: food photo from telegram" && git push`
-     Respond: "Filed in meal-prep inbox 🍋"
+     Commit + push: `cd /workspace/extra/pantry && git add inbox/ && git commit -m "inbox: food photo from telegram" && git push`
+     Respond: "Filed in pantry inbox 🍋"
    - **No → vault inbox**: Create `YYYY-MM-DD-{slug}.md` in `/workspace/extra/vault/inbox/` with the image referenced.
      Commit + push vault. Respond: "Filed in vault inbox 🍋"
 3. Keep the response to 1 line — routing is automatic.
 
 ### 3. Vault inbox food triage
 When processing vault inbox images (files in `/workspace/extra/vault/inbox/` that reference photos):
-- If the image is food → move it to meal-prep inbox instead (same process as above), delete from vault inbox
+- If the image is food → move it to pantry inbox instead (same process as above), delete from vault inbox
 - Commit both repos
 
 ### 4. Answer quick questions
@@ -109,10 +109,10 @@ The vault is mounted at `/workspace/extra/vault`. You can READ and WRITE:
 - `active/` — current projects
 - `inbox/` — unprocessed captures
 
-## Meal-Prep Access
+## Pantry Access
 
-The meal-prep repo is mounted at `/workspace/extra/meal-prep`. You can READ and WRITE:
-- `recipes/inbox/` — unprocessed recipe captures (food photos, ideas, links)
+The pantry repo is mounted at `/workspace/extra/pantry`. You can READ and WRITE:
+- `inbox/` — unprocessed recipe captures (food photos, ideas, links)
 - `recipes/` — organized recipes by category (mains/, sides/, breakfast/)
 - `plans/` — meal plans (`.menu` files)
 - `config/preferences.md` — dietary preferences/restrictions
