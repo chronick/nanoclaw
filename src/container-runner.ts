@@ -242,10 +242,16 @@ async function buildContainerArgs(
   if (onecliApplied) {
     logger.info({ containerName }, 'OneCLI gateway config applied');
   } else {
-    logger.warn(
-      { containerName },
-      'OneCLI gateway not reachable — container will have no credentials',
-    );
+    // Fallback: inject ANTHROPIC_API_KEY directly if OneCLI is unavailable
+    if (process.env.ANTHROPIC_API_KEY) {
+      args.push('-e', `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`);
+      logger.info({ containerName }, 'OneCLI unavailable — injected ANTHROPIC_API_KEY directly');
+    } else {
+      logger.warn(
+        { containerName },
+        'OneCLI gateway not reachable — container will have no credentials',
+      );
+    }
   }
 
   // Runtime-specific args for host gateway resolution
