@@ -409,7 +409,8 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        'mcp__scratchpad__*'
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -429,6 +430,15 @@ async function runQuery(
           type: 'http' as const,
           url: 'http://host.docker.internal:4321/mcp',
         },
+        ...(process.env.FEED_API_TOKEN ? {
+          scratchpad: {
+            command: 'node',
+            args: [path.join(path.dirname(mcpServerPath), 'scratchpad-mcp.js')],
+            env: {
+              FEED_API_TOKEN: process.env.FEED_API_TOKEN,
+            },
+          },
+        } : {}),
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],

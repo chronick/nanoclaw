@@ -303,6 +303,12 @@ async function buildContainerArgs(
   // Runtime-specific args for host gateway resolution
   args.push(...hostGatewayArgs());
 
+  // Inject Feed API token for scratchpad MCP server
+  const secrets = readEnvFile(['FEED_API_TOKEN']);
+  if (secrets.FEED_API_TOKEN) {
+    args.push('-e', `FEED_API_TOKEN=${secrets.FEED_API_TOKEN}`);
+  }
+
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),
   // or when getuid is unavailable (native Windows without WSL).

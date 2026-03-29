@@ -9,6 +9,8 @@ fi
 
 # Compile TypeScript agent-runner
 cd /app && npx tsc --outDir /tmp/dist 2>&1 >&2
+# Copy non-TypeScript MCP servers alongside compiled output
+cp /app/src/scratchpad-mcp.js /tmp/dist/ 2>/dev/null || true
 ln -s /app/node_modules /tmp/dist/node_modules
 chmod -R a-w /tmp/dist
 
