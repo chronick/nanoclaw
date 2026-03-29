@@ -262,6 +262,11 @@ async function buildContainerArgs(
   // Point git at a writable copy of host .gitconfig (copied during mount setup)
   args.push('-e', 'GIT_CONFIG_GLOBAL=/home/node/.claude/gitconfig');
 
+  // SSH refuses to run for unknown UIDs ("No user exists for uid 501").
+  // Override with GIT_SSH_COMMAND to specify the identity file directly
+  // and skip host key verification for github.com.
+  args.push('-e', 'GIT_SSH_COMMAND=ssh -i /home/node/.ssh/id_lemon -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null');
+
   // OneCLI gateway handles credential injection — containers never see real secrets.
   // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.
   const onecliApplied = await onecli.applyContainerConfig(args, {
