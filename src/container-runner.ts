@@ -14,6 +14,7 @@ import {
   GROUPS_DIR,
   IDLE_TIMEOUT,
   HOME_DIR,
+  OLLAMA_ADMIN_TOOLS,
   ONECLI_URL,
   TIMEZONE,
 } from './config.js';
@@ -34,8 +35,10 @@ const onecli = new OneCLI({ url: ONECLI_URL });
 
 /** Redact secret values from strings for safe logging. */
 function redactSecrets(s: string): string {
-  return s.replace(/(ANTHROPIC_API_KEY|OPENROUTER_API_KEY|RESEND_API_KEY|API_TOKEN|GITHUB_TOKEN)=([^ ]+)/g,
-    (_, key, val) => `${key}=${val.slice(0, 8)}***`);
+  return s.replace(
+    /(ANTHROPIC_API_KEY|OPENROUTER_API_KEY|RESEND_API_KEY|API_TOKEN|GITHUB_TOKEN)=([^ ]+)/g,
+    (_, key, val) => `${key}=${val.slice(0, 8)}***`,
+  );
 }
 
 // Sentinel markers for robust output parsing (must match agent-runner)
@@ -277,6 +280,11 @@ async function buildContainerArgs(
     'GIT_SSH_COMMAND=ssh -F /dev/null -i /home/node/.ssh/id_lemon -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null',
   );
 
+  // Forward Ollama admin tools flag if enabled
+  if (OLLAMA_ADMIN_TOOLS) {
+    args.push('-e', 'OLLAMA_ADMIN_TOOLS=true');
+  }
+
   // OneCLI gateway handles credential injection — containers never see real secrets.
   // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.
   const onecliApplied = await onecli.applyContainerConfig(args, {
@@ -459,7 +467,12 @@ export async function runContainerAgent(
       const chunk = data.toString();
       const lines = chunk.trim().split('\n');
       for (const line of lines) {
-        if (line) logger.debug({ container: group.folder }, line);
+        if (!line) continue;
+        if (line.includes('[OLLAMA]')) {
+          logger.info({ container: group.folder }, line);
+        } else {
+          logger.debug({ container: group.folder }, line);
+        }
       }
       // Don't reset timeout on stderr — SDK writes debug logs continuously.
       // Timeout only resets on actual output (OUTPUT_MARKER in stdout).
