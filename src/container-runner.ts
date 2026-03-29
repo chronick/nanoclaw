@@ -265,7 +265,10 @@ async function buildContainerArgs(
   // SSH refuses to run for unknown UIDs ("No user exists for uid 501").
   // Override with GIT_SSH_COMMAND to specify the identity file directly
   // and skip host key verification for github.com.
-  args.push('-e', 'GIT_SSH_COMMAND=ssh -i /home/node/.ssh/id_lemon -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null');
+  args.push(
+    '-e',
+    'GIT_SSH_COMMAND=ssh -F /dev/null -i /home/node/.ssh/id_lemon -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null',
+  );
 
   // OneCLI gateway handles credential injection — containers never see real secrets.
   // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.
