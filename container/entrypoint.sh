@@ -2,8 +2,7 @@
 set -e
 
 # Ensure current UID has a passwd entry (SSH refuses to run without one).
-# When --user HOST_UID:HOST_GID is passed, the container has no /etc/passwd
-# entry for that UID, breaking SSH and other tools that look up the user.
+# /etc/passwd is made writable in the Dockerfile for this purpose.
 if ! id -un 2>/dev/null; then
   echo "hostuser:x:$(id -u):$(id -g):Host User:/home/node:/bin/bash" >> /etc/passwd
 fi
