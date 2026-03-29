@@ -222,21 +222,28 @@ function buildVolumeMounts(
   }
 
   // Mount SSH key and git config for git push from containers
-  const sshDir = path.join(HOME_DIR, ".ssh");
-  const gitconfigPath = path.join(HOME_DIR, ".gitconfig");
+  const sshDir = path.join(HOME_DIR, '.ssh');
+  const gitconfigPath = path.join(HOME_DIR, '.gitconfig');
   if (fs.existsSync(sshDir)) {
     mounts.push({
       hostPath: sshDir,
-      containerPath: "/home/node/.ssh",
+      containerPath: '/home/node/.ssh',
       readonly: true,
     });
   }
+  // Copy .gitconfig into per-group session dir (already mounted read-write).
+  // Bind-mounting a single file causes "Device or resource busy" when git
+  // tries to atomically replace it, so we copy instead.
+  const gitconfigDst = path.join(
+    DATA_DIR,
+    'sessions',
+    group.folder,
+    '.gitconfig',
+  );
   if (fs.existsSync(gitconfigPath)) {
-    mounts.push({
-      hostPath: gitconfigPath,
-      containerPath: "/home/node/.gitconfig",
-      readonly: true,
-    });
+    fs.copyFileSync(gitconfigPath, gitconfigDst);
+    // No mount needed — GIT_CONFIG_GLOBAL env var points git at the copy
+    // inside the already-mounted .claude/ directory.
   }
 
   return mounts;
@@ -251,6 +258,9 @@ async function buildContainerArgs(
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
+
+  // Point git at a writable copy of host .gitconfig (copied during mount setup)
+  args.push('-e', 'GIT_CONFIG_GLOBAL=/home/node/.claude/gitconfig');
 
   // OneCLI gateway handles credential injection — containers never see real secrets.
   // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.
