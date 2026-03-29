@@ -31,6 +31,12 @@ import { RegisteredGroup } from './types.js';
 
 const onecli = new OneCLI({ url: ONECLI_URL });
 
+/** Redact secret values from strings for safe logging. */
+function redactSecrets(s: string): string {
+  return s.replace(/(ANTHROPIC_API_KEY|OPENROUTER_API_KEY|RESEND_API_KEY|API_TOKEN|GITHUB_TOKEN)=([^ ]+)/g,
+    (_, key, val) => `${key}=${val.slice(0, 8)}***`);
+}
+
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
@@ -352,7 +358,7 @@ export async function runContainerAgent(
         (m) =>
           `${m.hostPath} -> ${m.containerPath}${m.readonly ? ' (ro)' : ''}`,
       ),
-      containerArgs: containerArgs.join(' '),
+      containerArgs: redactSecrets(containerArgs.join(' ')),
     },
     'Container mount configuration',
   );
@@ -582,7 +588,7 @@ export async function runContainerAgent(
         }
         logLines.push(
           `=== Container Args ===`,
-          containerArgs.join(' '),
+          redactSecrets(containerArgs.join(' ')),
           ``,
           `=== Mounts ===`,
           mounts
