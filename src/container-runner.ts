@@ -13,6 +13,7 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  HOME_DIR,
   ONECLI_URL,
   TIMEZONE,
 } from './config.js';
@@ -220,6 +221,24 @@ function buildVolumeMounts(
     mounts.push(...validatedMounts);
   }
 
+  // Mount SSH key and git config for git push from containers
+  const sshDir = path.join(HOME_DIR, ".ssh");
+  const gitconfigPath = path.join(HOME_DIR, ".gitconfig");
+  if (fs.existsSync(sshDir)) {
+    mounts.push({
+      hostPath: sshDir,
+      containerPath: "/home/node/.ssh",
+      readonly: true,
+    });
+  }
+  if (fs.existsSync(gitconfigPath)) {
+    mounts.push({
+      hostPath: gitconfigPath,
+      containerPath: "/home/node/.gitconfig",
+      readonly: true,
+    });
+  }
+
   return mounts;
 }
 
@@ -245,7 +264,10 @@ async function buildContainerArgs(
     // Fallback: inject ANTHROPIC_API_KEY directly if OneCLI is unavailable
     if (process.env.ANTHROPIC_API_KEY) {
       args.push('-e', `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`);
-      logger.info({ containerName }, 'OneCLI unavailable — injected ANTHROPIC_API_KEY directly');
+      logger.info(
+        { containerName },
+        'OneCLI unavailable — injected ANTHROPIC_API_KEY directly',
+      );
     } else {
       logger.warn(
         { containerName },
