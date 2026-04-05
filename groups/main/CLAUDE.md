@@ -319,8 +319,8 @@ You run on API usage, not a subscription. Every response costs money.
 ### Photo Routing (automatic)
 When the user sends a photo:
 1. View the image
-2. **Is it food?** → copy to `/workspace/extra/pantry/inbox/` with markdown, commit + push. Respond: "Filed in pantry inbox 🍋"
-3. **Not food?** → create in `/workspace/extra/vault/inbox/` with markdown, commit + push. Respond: "Filed in vault inbox 🍋"
+2. **Is it food?** → copy to `/workspace/extra/vault/pantry/inbox/` with markdown. Commit + push vault. Respond: "Filed in pantry inbox 🍋"
+3. **Not food?** → create in `/workspace/extra/vault/inbox/` with markdown. Commit + push vault. Respond: "Filed in vault inbox 🍋"
 
 ### Task Management
 - Show tasks: `cd /workspace/extra/vault && br ready`
