@@ -1,0 +1,16 @@
+{
+  "allowedRoots": [
+    {
+      "path": "~/git/vault",
+      "allowReadWrite": true,
+      "description": "Personal vault — tasks, logs, pantry, blog, etc."
+    },
+    {
+      "path": "~/git/hatch3d",
+      "allowReadWrite": false,
+      "description": "Plotter art compositions — read-only for generation"
+    }
+  ],
+  "blockedPatterns": [".ssh", ".gnupg", ".gpg", ".aws", "credentials", ".env"],
+  "nonMainReadOnly": true
+}
