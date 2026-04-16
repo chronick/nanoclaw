@@ -313,9 +313,13 @@ async function buildContainerArgs(
   args.push(...hostGatewayArgs());
 
   // Inject Feed API token for scratchpad MCP server
-  const secrets = readEnvFile(['FEED_API_TOKEN']);
+  // Inject OpenRouter key for vault scripts (e.g. random-pair.py concept generation)
+  const secrets = readEnvFile(['FEED_API_TOKEN', 'OPENROUTER_API_KEY']);
   if (secrets.FEED_API_TOKEN) {
     args.push('-e', `FEED_API_TOKEN=${secrets.FEED_API_TOKEN}`);
+  }
+  if (secrets.OPENROUTER_API_KEY) {
+    args.push('-e', `OPENROUTER_API_KEY=${secrets.OPENROUTER_API_KEY}`);
   }
 
   // Run as host user so bind-mounted files are accessible.
