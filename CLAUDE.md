@@ -25,6 +25,20 @@ Single Node.js process with skill-based channel system. Channels (WhatsApp, Tele
 
 API keys, secret keys, OAuth tokens, and auth credentials are managed by the OneCLI gateway — which handles secret injection into containers at request time, so no keys or tokens are ever passed to containers directly. Run `onecli --help`.
 
+### vault-ops MCP (preferred for host-side automation)
+
+Container agents can call typed vault tools over HTTP at
+`host.docker.internal:7810/mcp` (registered as `vault-ops` in
+`container/agent-runner/src/index.ts` under `mcpServers`). The server lives
+in `~/git/vault-mcp`; secrets stay on the host and never enter the
+container.
+
+**When adding a capability that needs a host secret, prefer extending
+vault-mcp over injecting a new env var via `src/container-runner.ts`.**
+The latter forces a rebuild + restart for every new tool and tends to
+produce silent fallbacks when a key is missing. See
+`~/git/vault-mcp/CLAUDE.md` for the add-a-tool pattern.
+
 ## Skills
 
 Four types of skills exist in NanoClaw. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full taxonomy and guidelines.
