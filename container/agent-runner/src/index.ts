@@ -431,6 +431,10 @@ async function runQuery(
           type: 'http' as const,
           url: 'http://host.docker.internal:4321/mcp',
         },
+        'content-search': {
+          type: 'http' as const,
+          url: 'http://host.docker.internal:7800/mcp',
+        },
         ...(process.env.FEED_API_TOKEN ? {
           scratchpad: {
             command: 'node',
