@@ -435,6 +435,10 @@ async function runQuery(
           type: 'http' as const,
           url: 'http://host.docker.internal:7800/mcp',
         },
+        'vault-ops': {
+          type: 'http' as const,
+          url: 'http://host.docker.internal:7810/mcp',
+        },
         ...(process.env.FEED_API_TOKEN ? {
           scratchpad: {
             command: 'node',
