@@ -36,7 +36,7 @@ const onecli = new OneCLI({ url: ONECLI_URL });
 /** Redact secret values from strings for safe logging. */
 function redactSecrets(s: string): string {
   return s.replace(
-    /(ANTHROPIC_API_KEY|OPENROUTER_API_KEY|RESEND_API_KEY|API_TOKEN|GITHUB_TOKEN)=([^ ]+)/g,
+    /(ANTHROPIC_API_KEY|OPENROUTER_API_KEY|RESEND_API_KEY|API_TOKEN|GITHUB_TOKEN|LITELLM_KEY_[A-Z_]+|LITELLM_MASTER_KEY)=([^ ]+)/g,
     (_, key, val) => `${key}=${val.slice(0, 8)}***`,
   );
 }
@@ -294,17 +294,22 @@ async function buildContainerArgs(
   if (onecliApplied) {
     logger.info({ containerName }, 'OneCLI gateway config applied');
   } else {
-    // Fallback: inject ANTHROPIC_API_KEY directly if OneCLI is unavailable
-    if (process.env.ANTHROPIC_API_KEY) {
-      args.push('-e', `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`);
+    // Fallback when OneCLI gateway is down: route claude-code through the
+    // central LLM proxy (core.llm-proxy at host:8090) using the nanoclaw
+    // virtual key. ANTHROPIC_BASE_URL switches the SDK from Anthropic
+    // direct to the proxy's Anthropic-compatible passthrough.
+    const fallback = readEnvFile(['LITELLM_KEY_NANOCLAW']);
+    if (fallback.LITELLM_KEY_NANOCLAW) {
+      args.push('-e', `ANTHROPIC_API_KEY=${fallback.LITELLM_KEY_NANOCLAW}`);
+      args.push('-e', 'ANTHROPIC_BASE_URL=http://host.docker.internal:8090/anthropic');
       logger.info(
         { containerName },
-        'OneCLI unavailable — injected ANTHROPIC_API_KEY directly',
+        'OneCLI unavailable — fell back to core.llm-proxy with nanoclaw virtual key',
       );
     } else {
       logger.warn(
         { containerName },
-        'OneCLI gateway not reachable — container will have no credentials',
+        'OneCLI gateway not reachable and no LITELLM_KEY_NANOCLAW — container will have no credentials',
       );
     }
   }
@@ -312,14 +317,18 @@ async function buildContainerArgs(
   // Runtime-specific args for host gateway resolution
   args.push(...hostGatewayArgs());
 
-  // Inject Feed API token for scratchpad MCP server
-  // Inject OpenRouter key for vault scripts (e.g. random-pair.py concept generation)
-  const secrets = readEnvFile(['FEED_API_TOKEN', 'OPENROUTER_API_KEY']);
+  // Inject Feed API token for scratchpad MCP server.
+  // Inject vault-scripts virtual key + proxy URL so vault scripts inside
+  // the container (random-pair, weekly-log-summary, topic_detector) route
+  // through core.llm-proxy. host.docker.internal because container can't
+  // reach host's localhost.
+  const secrets = readEnvFile(['FEED_API_TOKEN', 'LITELLM_KEY_VAULT_SCRIPTS']);
   if (secrets.FEED_API_TOKEN) {
     args.push('-e', `FEED_API_TOKEN=${secrets.FEED_API_TOKEN}`);
   }
-  if (secrets.OPENROUTER_API_KEY) {
-    args.push('-e', `OPENROUTER_API_KEY=${secrets.OPENROUTER_API_KEY}`);
+  if (secrets.LITELLM_KEY_VAULT_SCRIPTS) {
+    args.push('-e', `LITELLM_KEY_VAULT_SCRIPTS=${secrets.LITELLM_KEY_VAULT_SCRIPTS}`);
+    args.push('-e', 'LLM_PROXY_URL=http://host.docker.internal:8090');
   }
 
   // Run as host user so bind-mounted files are accessible.
