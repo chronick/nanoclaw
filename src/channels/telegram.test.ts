@@ -1,3 +1,4 @@
+import path from 'path';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 
 // --- Mocks ---
@@ -707,6 +708,147 @@ describe('TelegramChannel', () => {
       await triggerMediaMessage('message:photo', ctx);
 
       expect(opts.onMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- Media download ---
+  // These exercise the path where grammY's ctx.getFile() is available; the
+  // handler downloads the file into the group's media/ folder and embeds the
+  // container-visible path in the placeholder so the agent can read it.
+
+  describe('media download', () => {
+    let tmpRoot: string;
+
+    beforeEach(async () => {
+      const os = await import('os');
+      const fsp = await import('fs/promises');
+      tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'nanoclaw-test-'));
+      // group-folder.ts resolves paths under GROUPS_DIR. The real config sets
+      // GROUPS_DIR from PROJECT_ROOT; for these tests we just need a real
+      // writable dir, so we point the implementation at our tmp root by
+      // re-mocking config and group-folder paths through a fresh import.
+      vi.doMock('../config.js', () => ({
+        ASSISTANT_NAME: 'Andy',
+        TRIGGER_PATTERN: /^@Andy\b/i,
+        GROUPS_DIR: tmpRoot,
+        DATA_DIR: tmpRoot,
+      }));
+    });
+
+    afterEach(async () => {
+      const fsp = await import('fs/promises');
+      await fsp.rm(tmpRoot, { recursive: true, force: true });
+      vi.doUnmock('../config.js');
+    });
+
+    it('embeds media path in photo placeholder when download succeeds', async () => {
+      // Re-import after vi.doMock to pick up new config
+      vi.resetModules();
+      const { TelegramChannel: FreshChannel } = await import('./telegram.js');
+      const opts = createTestOpts();
+      const channel = new FreshChannel('test-token', opts);
+      await channel.connect();
+
+      const fakeFile = {
+        file_path: 'photos/file_42.jpg',
+        download: vi.fn(async (dest: string) => {
+          const fsp = await import('fs/promises');
+          await fsp.writeFile(dest, 'fake-image-bytes');
+        }),
+      };
+      const ctx: any = createMediaCtx({ messageId: 99 });
+      ctx.getFile = vi.fn(async () => fakeFile);
+
+      await triggerMediaMessage('message:photo', ctx);
+
+      expect(fakeFile.download).toHaveBeenCalledWith(
+        expect.stringMatching(/\/test-group\/media\/photo-99\.jpg$/),
+      );
+      expect(opts.onMessage).toHaveBeenCalledWith(
+        'tg:100200300',
+        expect.objectContaining({
+          content: '[Photo: /workspace/group/media/photo-99.jpg]',
+        }),
+      );
+    });
+
+    it('falls back to plain placeholder when download throws', async () => {
+      vi.resetModules();
+      const { TelegramChannel: FreshChannel } = await import('./telegram.js');
+      const opts = createTestOpts();
+      const channel = new FreshChannel('test-token', opts);
+      await channel.connect();
+
+      const ctx: any = createMediaCtx({ messageId: 7 });
+      ctx.getFile = vi.fn(async () => {
+        throw new Error('file too big');
+      });
+
+      await triggerMediaMessage('message:photo', ctx);
+
+      expect(opts.onMessage).toHaveBeenCalledWith(
+        'tg:100200300',
+        expect.objectContaining({ content: '[Photo]' }),
+      );
+    });
+
+    it('preserves caption alongside downloaded media path', async () => {
+      vi.resetModules();
+      const { TelegramChannel: FreshChannel } = await import('./telegram.js');
+      const opts = createTestOpts();
+      const channel = new FreshChannel('test-token', opts);
+      await channel.connect();
+
+      const ctx: any = createMediaCtx({
+        messageId: 12,
+        caption: 'sunset',
+      });
+      ctx.getFile = vi.fn(async () => ({
+        file_path: 'photos/file_X.jpg',
+        download: async (dest: string) => {
+          const fsp = await import('fs/promises');
+          await fsp.writeFile(dest, 'bytes');
+        },
+      }));
+
+      await triggerMediaMessage('message:photo', ctx);
+
+      expect(opts.onMessage).toHaveBeenCalledWith(
+        'tg:100200300',
+        expect.objectContaining({
+          content: '[Photo: /workspace/group/media/photo-12.jpg] sunset',
+        }),
+      );
+    });
+
+    it('uses original filename for documents', async () => {
+      vi.resetModules();
+      const { TelegramChannel: FreshChannel } = await import('./telegram.js');
+      const opts = createTestOpts();
+      const channel = new FreshChannel('test-token', opts);
+      await channel.connect();
+
+      const ctx: any = createMediaCtx({
+        messageId: 5,
+        extra: { document: { file_name: 'my report.pdf' } },
+      });
+      ctx.getFile = vi.fn(async () => ({
+        file_path: 'documents/file_X.pdf',
+        download: async (dest: string) => {
+          const fsp = await import('fs/promises');
+          await fsp.writeFile(dest, 'bytes');
+        },
+      }));
+
+      await triggerMediaMessage('message:document', ctx);
+
+      expect(opts.onMessage).toHaveBeenCalledWith(
+        'tg:100200300',
+        expect.objectContaining({
+          content:
+            '[Document: /workspace/group/media/document-5-my_report.pdf]',
+        }),
+      );
     });
   });
 

@@ -1,8 +1,11 @@
+import fs from 'fs';
 import https from 'https';
+import path from 'path';
 import { Api, Bot } from 'grammy';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
+import { resolveGroupFolderPath } from '../group-folder.js';
 import { logger } from '../logger.js';
 import { registerChannel, ChannelOpts } from './registry.js';
 import {
@@ -11,6 +14,65 @@ import {
   OnInboundMessage,
   RegisteredGroup,
 } from '../types.js';
+
+const MEDIA_CONTAINER_PREFIX = '/workspace/group/media';
+
+interface MediaSpec {
+  prefix: string;
+  defaultExt: string;
+  originalName?: string;
+}
+
+function sanitizeFilename(name: string): string {
+  return name.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 200);
+}
+
+/**
+ * Download a media file attached to the current message into the group's
+ * `media/` folder and return its container-visible path.
+ * Falls back to null when grammY's `ctx.getFile()` is unavailable (unit tests),
+ * the message carries no file, or the download fails (e.g. >20MB bot API limit).
+ */
+async function downloadMedia(
+  ctx: any,
+  spec: MediaSpec,
+  groupFolder: string,
+): Promise<string | null> {
+  if (typeof ctx.getFile !== 'function') return null;
+
+  try {
+    const file = await ctx.getFile();
+    if (!file?.file_path) return null;
+
+    let ext = spec.defaultExt;
+    const fromOriginal = path.extname(file.file_path).slice(1);
+    if (fromOriginal) ext = fromOriginal;
+
+    const groupDir = resolveGroupFolderPath(groupFolder);
+    const mediaDir = path.join(groupDir, 'media');
+    fs.mkdirSync(mediaDir, { recursive: true });
+
+    const msgId = ctx.message.message_id;
+    const baseName = spec.originalName
+      ? `${spec.prefix}-${msgId}-${sanitizeFilename(spec.originalName)}`
+      : `${spec.prefix}-${msgId}.${ext}`;
+
+    const hostPath = path.join(mediaDir, baseName);
+    await file.download(hostPath);
+
+    logger.info(
+      { type: spec.prefix, msgId, hostPath },
+      'Downloaded Telegram media',
+    );
+    return `${MEDIA_CONTAINER_PREFIX}/${baseName}`;
+  } catch (err) {
+    logger.error(
+      { err, type: spec.prefix, msgId: ctx.message?.message_id },
+      'Failed to download Telegram media',
+    );
+    return null;
+  }
+}
 
 export interface TelegramChannelOpts {
   onMessage: OnInboundMessage;
@@ -201,17 +263,63 @@ export class TelegramChannel implements Channel {
       });
     };
 
-    this.bot.on('message:photo', (ctx) => storeNonText(ctx, '[Photo]'));
-    this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
-    this.bot.on('message:voice', (ctx) => storeNonText(ctx, '[Voice message]'));
-    this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));
+    // Download a media file (when possible) and embed its container-visible
+    // path in the placeholder so the agent can read it from /workspace/group.
+    // Falls back to a path-less placeholder when download isn't possible.
+    const handleMedia = async (
+      ctx: any,
+      spec: MediaSpec,
+      label: string,
+      fallback?: string,
+    ) => {
+      const chatJid = `tg:${ctx.chat.id}`;
+      const group = this.opts.registeredGroups()[chatJid];
+      if (!group) return;
+
+      const containerPath = await downloadMedia(ctx, spec, group.folder);
+      const placeholder = containerPath
+        ? `[${label}: ${containerPath}]`
+        : (fallback ?? `[${label}]`);
+      storeNonText(ctx, placeholder);
+    };
+
+    this.bot.on('message:photo', (ctx) =>
+      handleMedia(ctx, { prefix: 'photo', defaultExt: 'jpg' }, 'Photo'),
+    );
+    this.bot.on('message:video', (ctx) =>
+      handleMedia(ctx, { prefix: 'video', defaultExt: 'mp4' }, 'Video'),
+    );
+    this.bot.on('message:voice', (ctx) =>
+      handleMedia(
+        ctx,
+        { prefix: 'voice', defaultExt: 'ogg' },
+        'Voice message',
+      ),
+    );
+    this.bot.on('message:audio', (ctx) =>
+      handleMedia(ctx, { prefix: 'audio', defaultExt: 'mp3' }, 'Audio'),
+    );
     this.bot.on('message:document', (ctx) => {
       const name = ctx.message.document?.file_name || 'file';
-      storeNonText(ctx, `[Document: ${name}]`);
+      return handleMedia(
+        ctx,
+        {
+          prefix: 'document',
+          defaultExt: 'bin',
+          originalName: ctx.message.document?.file_name,
+        },
+        'Document',
+        `[Document: ${name}]`,
+      );
     });
     this.bot.on('message:sticker', (ctx) => {
       const emoji = ctx.message.sticker?.emoji || '';
-      storeNonText(ctx, `[Sticker ${emoji}]`);
+      return handleMedia(
+        ctx,
+        { prefix: 'sticker', defaultExt: 'webp' },
+        `Sticker ${emoji}`.trimEnd(),
+        `[Sticker ${emoji}]`,
+      );
     });
     this.bot.on('message:location', (ctx) => storeNonText(ctx, '[Location]'));
     this.bot.on('message:contact', (ctx) => storeNonText(ctx, '[Contact]'));
